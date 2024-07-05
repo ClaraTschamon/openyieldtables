@@ -1,4 +1,5 @@
 import csv
+import numpy as np
 from pathlib import Path
 from typing import Dict, List, Optional, TypedDict, Union, cast
 
@@ -189,3 +190,93 @@ def get_yield_table(id: int) -> YieldTable:
         **yield_table_meta.model_dump(),
         data=YieldTableData(yield_classes=yield_classes),
     )
+
+
+def get_interpolated_yield_table(id: int, target_yield_class: float) -> YieldClass:
+    """
+    Reads the yield table data for a specific yield table ID and yield class from
+    `data/yield_tables.csv` and returns an interpolated YieldClass instance.
+
+    The CSV file is expected to be in a specific format, with columns for
+    `id`, `yield_class`, `age`, `dominant_height`, `average_height`, etc.
+
+    Args:
+        id: The ID of the yield table to get the data for.
+        target_yield_class: The target yield class to interpolate to.
+
+    Returns:
+        YieldClass: A `YieldClass` instance for the target yield class.
+
+    """
+
+    # Make a list of yield class rows
+    lower_yield_class = int(target_yield_class)
+    upper_yield_class = lower_yield_class + 1
+
+    yield_table_lower_class = get_yield_table_of_class(id, lower_yield_class)
+    yield_table_upper_class = get_yield_table_of_class(id, upper_yield_class)
+
+    # List of yield class rows
+    interpolation_table = []
+
+    for lower_row, upper_row in zip(yield_table_lower_class, yield_table_upper_class):
+        interpolation_table.append(
+            YieldClassRow(
+                age=int(lower_row.age),
+                dominant_height=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.dominant_height, upper_row.dominant_height]
+                ),
+                average_height=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.average_height, upper_row.average_height]
+                ),
+                dbh=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.dbh, upper_row.dbh]
+                ),
+                taper=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.taper, upper_row.taper]
+                ),
+                trees_per_ha=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.trees_per_ha, upper_row.trees_per_ha]
+                ),
+                basal_area=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.basal_area, upper_row.basal_area]
+                ),
+                volume_per_ha=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.volume_per_ha, upper_row.volume_per_ha]
+                ),
+                average_annual_age_increment=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.average_annual_age_increment, upper_row.average_annual_age_increment]
+                ),
+                total_growth_performance=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.total_growth_performance, upper_row.total_growth_performance]
+                ),
+                current_annual_increment=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [safe_float(lower_row.current_annual_increment), safe_float(upper_row.current_annual_increment)]
+                ),
+                mean_annual_increment=np.interp(
+                    target_yield_class, [lower_yield_class, upper_yield_class], [lower_row.mean_annual_increment, upper_row.mean_annual_increment]
+                ),
+            )
+        )
+
+    return YieldClass(yield_class=target_yield_class, rows=interpolation_table)
+
+
+def get_yield_table_of_class(id: int, yield_class: int) -> YieldClassRow:
+    # Get the yield table
+    yield_table = get_yield_table(id)
+
+    # Find the yield class
+    for yield_class_data in yield_table.data.yield_classes:
+        if yield_class_data.yield_class == yield_class:
+            return yield_class_data.rows
+
+    raise ValueError(f"Yield class {yield_class} not found in yield table {id}.")
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
